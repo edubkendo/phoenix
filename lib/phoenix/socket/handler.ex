@@ -6,6 +6,7 @@ defmodule Phoenix.Socket.Handler do
   alias Phoenix.Socket
   alias Phoenix.Socket.Message
   alias Phoenix.Channel
+  alias Plug.Conn
 
   defmodule InvalidReturn do
     defexception [:message]
@@ -19,15 +20,27 @@ defmodule Phoenix.Socket.Handler do
 
   The following transport options can be provided:
 
-    * `{:tcp, :http}` - Insecure transport over http
-    * `{:ssl, :http}` - Secure transport over https
-
   """
-  def init({:tcp, :http}, req, opts) do
-    {:upgrade, :protocol, :cowboy_websocket, req, opts}
+  def init(transport, req, opts) do
+    plug_conn = Plug.Adapters.Cowboy.Conn(req, transport)
+    case Conn.get_req_header(plug_conn, "upgrade") do
+      [] ->
+        init(transport, {req, plug_conn}, opts, plug_conn.method)
+      [header] ->
+        case String.downcase(header) of
+          "websocket" ->
+            {:upgrade, :protocol, :cowboy_websocket, req, opts}
+          _ ->
+            {:ok, req3} = :cowboy_req:.reply(501, [], [], req),
+            {:shutdown, req3, :undefined}
+        end
+      end
   end
-  def init({:ssl, :http}, req, opts) do
-    {:upgrade, :protocol, :cowboy_websocket, req, opts}
+
+  def init(transport, {req, plug_conn}, opts, "GET") do
+    {:handler, handler} = List.keyfind(opts, :handler, 1)
+    timeout = List.keyfind(opts, :timeout, 0) || 60000
+    state = %Socket{conn: req, pid: self, router: router}
   end
 
   @doc """
