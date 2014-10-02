@@ -111,7 +111,7 @@ defmodule Phoenix.Controller.ErrorHandlingTest do
   end
 
   test "default ErrorController renders 500 for errors when catch_errors: true" do
-    conn = simulate_request(RouterDefaultPageController, :get, "/500-raise")
+    conn  = simulate_request(RouterDefaultPageController, :get, "/500-raise")
     assert String.match?(conn.resp_body, ~r/Something went wrong/)
   end
 
@@ -132,7 +132,7 @@ defmodule Phoenix.Controller.ErrorHandlingTest do
   end
 
   test "controller can override call/2 to cache errors" do
-    conn = simulate_request(RouterCustomPageController, :get, "/500-throw")
+    {conn, _logs} = simulate_request_with_logging(RouterCustomPageController, :get, "/500-throw")
     assert conn.status == 500
     assert conn.resp_body == "boom"
   end

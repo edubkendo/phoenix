@@ -1,7 +1,8 @@
 defmodule Phoenix.Socket.HandlerIntegrationTest do
   use ExUnit.Case, async: true
+  use ConnHelper
 
-  defmodule DummyyChannel do
+  defmodule TestChannel do
     use Phoenix.Channel
   
     def join(socket, "topic", message) do
@@ -26,33 +27,58 @@ defmodule Phoenix.Socket.HandlerIntegrationTest do
     end
   end
 
-  defmodule Dummy do
+  defmodule TestServer do
     use Phoenix.Router
     use Phoenix.Router.Socket, mount: "/ws"
 
-    channel "channel", .DummyChannel
+    channel "channel",TestChannel
 
     def init(opts) do
       opts
     end
   end
 
-  ## Cowboy setup for testing
-  #
-  # We use hackney to perform an HTTP request against the cowboy/plug running
-  # on port 8001. Plug then uses Kernel.apply/3 to dispatch based on the first
-  # element of the URI's path.
-  #
-  # e.g. `assert {204, _, _} = request :get, "/build/foo/bar"` will perform a
-  # GET http://127.0.0.1:8001/build/foo/bar and Plug will call build/1.
+  defmodule TestClient do
+    @behaviour :websocket_client_handler
 
+    def start_link do
+      :websocket_client.start_link('ws://localhost:3000/ws', __MODULE__, [])
+    end
+
+    def init([], _conn_state) do
+      {:ok, []}
+    end
+
+    def websocket_handle({:text, msg}, _conn_state, state) do
+      IO.puts msg
+      {:ok, state}
+    end
+
+    def websocket_terminate(reason, _conn_state, _state) do
+      IO.puts reason
+      :ok
+    end
+  end
 
   setup_all do
-    {:ok, _pid} = Plug.Adapters.Cowboy.http __MODULE__, [], port: 8001
+
+    capture_log fn ->
+      {:ok, _pid } = Phoenix.Router.Adapter.start(TestServer, port: 3000)
+    end
+
+    {:ok, pid} = TestClient.start_link
+
 
     on_exit fn ->
-      :ok = Plug.Adapters.Cowboy.shutdown(__MODULE__.HTTP)
+      capture_log fn ->
+        :ok = Phoenix.Router.Adapter.stop(TestServer, [])
+        pid.stop()
+      end
     end
     :ok
+  end
+
+  test "makes simple request" do
+     :websocket_client.cast(TestClient, {:text, "message 1"})
   end
 end

@@ -9,6 +9,7 @@ defmodule Phoenix.Router.Adapter do
 
   alias Phoenix.Config
   @unsent [:unset, :set]
+  require Logger
 
   @doc """
   Starts the Router module with provided List of options
@@ -19,7 +20,7 @@ defmodule Phoenix.Router.Adapter do
       {:ok, pid} ->
         [:green, "Running #{inspect module} with Cowboy on port #{inspect opts[:port]}"]
         |> IO.ANSI.format
-        |> IO.puts
+        |> Logger.info
         {:ok, pid}
 
       {:error, :eaddrinuse} ->
@@ -36,7 +37,7 @@ defmodule Phoenix.Router.Adapter do
   def stop(module, opts) do
     protocol = if opts[:ssl], do: HTTPS, else: HTTP
     apply(Plug.Adapters.Cowboy, :shutdown, [Module.concat(module, protocol)])
-    IO.puts "#{module} has been stopped"
+    Logger.info "#{module} has been stopped"
   end
 
   @doc """
