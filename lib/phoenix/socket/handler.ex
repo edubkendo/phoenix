@@ -22,10 +22,11 @@ defmodule Phoenix.Socket.Handler do
 
   """
   def init(transport, req, opts) do
-    plug_conn = Plug.Adapters.Cowboy.Conn(req, transport)
+    #Probably not necessary but also nice to have.
+    plug_conn = Plug.Adapters.Cowboy.conn(req, transport)
     case Conn.get_req_header(plug_conn, "upgrade") do
       [] ->
-        init(transport, {req, plug_conn}, opts, plug_conn.method)
+        init(transport, req, opts, plug_conn.method)
       [header] ->
         case String.downcase(header) of
           "websocket" ->
@@ -37,11 +38,48 @@ defmodule Phoenix.Socket.Handler do
       end
   end
 
-  def init(transport, {req, plug_conn}, opts, "GET") do
+  #Cowboy connection init. For long polling
+  def init(transport, cowboy_req, opts, "GET") do
     {:handler, handler} = List.keyfind(opts, :handler, 1)
     timeout = List.keyfind(opts, :timeout, 0) || 60000
-    state = %Socket{conn: req, pid: self, router: router}
+    state = %Socket{conn: cowboy_req, pid: self, router: router}
+
+    case handler.init(transport, cowboy_req, opts) do
+      {:ok, req, state} ->
+        req = :cowboy_req.compact(req)
+        {:loop, req, state, timeout, :hibernate}
+      {:error, req, state} ->
+        {:shutdown, :req, state}
+    end
   end
+
+  #Cowboy connection init. For long polling SEND data.
+  def init(transport, cowboy_req, opts, "POST") do
+    {:handler, handler} = List.keyfind(opts, :handler, 1)
+    state = %Socket{conn: cowboy_req, pid: self, router: router}
+    case handler.init(transport, cowboy_req, opts) do
+      {:ok, req, state} ->
+        req = :cowboy_req.compact(req)
+        {:ok, req, state}
+      {:error, req, state} ->
+        {:shutdown, :req, state}
+    end
+  end
+
+  #Cowboy connection init. For all requests not handled here.
+  def init(_transport, req, _opts, _method) do
+    {:ok, req} = :cowboy_req.reply(405, [], [], req)
+    {:shutdown, req, :undefined}
+  end
+
+  def handle(req, state) do
+    [transport] = :cowboy_req.get([:transport], req)
+    #Probably not necessary but also nice to have.
+    plug_conn = Plug.Adapters.Cowboy.conn(req, transport)
+    case Plugg.Conn.read_body(plug_conn) do
+      {:ok, 
+  end
+
 
   @doc """
   Handles initalization of the websocket
@@ -101,11 +139,13 @@ defmodule Phoenix.Socket.Handler do
     msg = %Message{channel: "phoenix", topic: "conn", event: "heartbeat", message: %{}}
     {:reply, {:text, JSON.encode!(msg)}, socket.conn, socket}
   end
+
   defp dispatch(socket, channel, "join", msg) do
     socket
     |> socket.router.match(:websocket, channel, "join", msg)
     |> handle_result("join")
   end
+
   defp dispatch(socket, channel, event, msg) do
     if Socket.authenticated?(socket, channel, socket.topic) do
       socket
