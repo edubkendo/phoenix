@@ -34,7 +34,8 @@ defmodule Phoenix.Mixfile do
       {:poison, "~> 1.1.0"},
       {:earmark, "~> 0.1", only: :docs},
       {:ex_doc, "~> 0.5", only: :docs},
-      {:websocket_client, github: "jeremyong/websocket_client", only: :test}
+      {:websocket_client, github: "jeremyong/websocket_client", only: :test},
+      {:hackney, "~> 0.14.1", only: :test}
     ]
   end
 end

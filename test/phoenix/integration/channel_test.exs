@@ -1,10 +1,12 @@
 Code.require_file "websocket_client.exs", __DIR__
+Code.require_file "longpolling_client.exs", __DIR__
 
 defmodule Phoenix.Integration.ChannelTest do
   use ExUnit.Case, async: true
   alias Phoenix.Integration.ChannelTest.Router
   alias Phoenix.Integration.ChannelTest.RoomChannel
   alias Phoenix.Integration.WebsocketClient
+  alias Phoenix.Integration.LongPollingClient
   alias Phoenix.Socket.Message
 
   @port 4808
@@ -63,5 +65,12 @@ defmodule Phoenix.Integration.ChannelTest do
 
     WebsocketClient.send_event(sock, "rooms", "lobby", "new:msg", %{body: "hi!"})
     refute_receive %Message{}
+  end
+
+
+  test "adapter handles long polling" do
+    LongPollingClient.start_link()
+    {200, body} = LongPollingClient.get("http://127.0.0.1:#{@port}/ws")
+    IO.puts body
   end
 end

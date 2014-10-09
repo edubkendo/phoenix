@@ -1,6 +1,7 @@
 defmodule Phoenix.Socket.Handler do
   alias Poison, as: JSON
 
+  @behaviour :cowboy_http_handler
   @behaviour :cowboy_websocket_handler
 
   alias Phoenix.Socket
@@ -22,17 +23,16 @@ defmodule Phoenix.Socket.Handler do
 
   """
   def init(transport, req, opts) do
-    #Probably not necessary but also nice to have.
-    plug_conn = Plug.Adapters.Cowboy.conn(req, transport)
-    case Conn.get_req_header(plug_conn, "upgrade") do
-      [] ->
-        init(transport, req, opts, plug_conn.method)
-      [header] ->
-        case String.downcase(header) of
+    case :cowboy_req.header("upgrade", req) do
+      {:undefined, req} ->
+        {method, req} = :cowboy_req.method(req)
+        init(transport, req, opts, method)
+      {header, req} ->
+        case String.downcase(header) do
           "websocket" ->
             {:upgrade, :protocol, :cowboy_websocket, req, opts}
           _ ->
-            {:ok, req3} = :cowboy_req:.reply(501, [], [], req),
+            {:ok, req3} = :cowboy_req.reply(501, [], [], req)
             {:shutdown, req3, :undefined}
         end
       end
@@ -40,29 +40,32 @@ defmodule Phoenix.Socket.Handler do
 
   #Cowboy connection init. For long polling
   def init(transport, cowboy_req, opts, "GET") do
-    {:handler, handler} = List.keyfind(opts, :handler, 1)
     timeout = List.keyfind(opts, :timeout, 0) || 60000
-    state = %Socket{conn: cowboy_req, pid: self, router: router}
 
-    case handler.init(transport, cowboy_req, opts) do
+    case websocket_init(transport, cowboy_req, opts) do
       {:ok, req, state} ->
         req = :cowboy_req.compact(req)
         {:loop, req, state, timeout, :hibernate}
       {:error, req, state} ->
-        {:shutdown, :req, state}
+        {:shutdown, req, state}
     end
   end
 
   #Cowboy connection init. For long polling SEND data.
-  def init(transport, cowboy_req, opts, "POST") do
-    {:handler, handler} = List.keyfind(opts, :handler, 1)
-    state = %Socket{conn: cowboy_req, pid: self, router: router}
-    case handler.init(transport, cowboy_req, opts) do
-      {:ok, req, state} ->
-        req = :cowboy_req.compact(req)
-        {:ok, req, state}
-      {:error, req, state} ->
-        {:shutdown, :req, state}
+  def init(transport, req, opts, "POST") do
+    case :cowboy_req.body(req) do
+      {:ok, body, req} -> 
+        #TODO Figure out state :-|
+        case websocket_handle(body, req, nil) do
+          {:ok, req, state} ->
+            {:ok, req, state}
+          {:reply, reply, req, state} ->
+            {:ok, req} = :cowboy_req.reply(200, [], reply, req)
+            {:ok, req, state}
+        end
+      {:error, _} ->
+        #STATE :-|
+        {:ok, req, nil}
     end
   end
 
@@ -72,14 +75,21 @@ defmodule Phoenix.Socket.Handler do
     {:shutdown, req, :undefined}
   end
 
+  #Cowboy actually handle the request
   def handle(req, state) do
-    [transport] = :cowboy_req.get([:transport], req)
-    #Probably not necessary but also nice to have.
-    plug_conn = Plug.Adapters.Cowboy.conn(req, transport)
-    case Plugg.Conn.read_body(plug_conn) do
-      {:ok, 
+    case :cowboy_req.body(req) do
+      {:ok, body, req} -> 
+        case websocket_handle(body, req, state) do
+          {:ok, req, state} -> #No reply
+            {:ok, req, state}
+          {:reply, reply, req, state} -> #Reply
+            {ok, req} = :cowboy_req.reply(200, [], reply, req)
+            {ok, req, state}
+        end
+      {:error, _} ->
+        {:ok, req, state}
+    end
   end
-
 
   @doc """
   Handles initalization of the websocket
