@@ -107,6 +107,13 @@ defmodule Phoenix.Controller.Connection do
   end
 
   @doc """
+  Upgrades the connection
+  """
+  def upgrade(conn, [{transport, handler}]) do
+    put_private(conn, :upgrade, {transport, handler}) |> halt
+  end
+
+  @doc """
   Sends JSON response from provided json String
 
   ## Examples
